@@ -52,6 +52,15 @@ def is_searchable_record(record: Mapping[str, object]) -> bool:
     )
 
 
+def is_readable_record(record: Mapping[str, object]) -> bool:
+    """Whether a read by id can serve the record's stored content: searchable, or
+    parsed on demand for its current revision. Search itself keeps the gate above."""
+    rev = record.get("contentRev")
+    return is_searchable_record(record) or (
+        record.get("parseNowStatus") == "STORED" and bool(rev) and record.get("parseNowRev") == rev
+    )
+
+
 def aql_searchable_record(var: str, completed_param: str = "completedStatus") -> str:
     """Indexed now, or still holding a previous indexed copy. Needs ``@<completed_param>``."""
     return f"({var}.indexingStatus == @{completed_param} OR {var}.{HAS_INDEXED_COPY} == true)"

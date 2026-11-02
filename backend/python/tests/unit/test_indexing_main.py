@@ -1081,6 +1081,7 @@ class TestStartKafkaConsumers:
         
         mock_producer = MagicMock()
         mock_producer.initialize = AsyncMock()
+        priority_consumer = MagicMock(start=AsyncMock())
         stage_consumer = MagicMock(start=AsyncMock())
         admin = MagicMock(ensure_topics_exist=AsyncMock())
 
@@ -1092,32 +1093,41 @@ class TestStartKafkaConsumers:
             patch("app.indexing_main.MessagingFactory.create_producer", return_value=mock_producer),
             patch("app.indexing_main.MessagingUtils.create_record_consumer_config", new_callable=AsyncMock, return_value={}),
             patch("app.indexing_main.KafkaUtils.create_record_message_handler", new_callable=AsyncMock, return_value=MagicMock()),
-            patch("app.indexing_main.MessagingFactory.create_consumer", side_effect=[mock_consumer, stage_consumer]) as create_consumer,
+            patch("app.indexing_main.MessagingFactory.create_consumer", side_effect=[mock_consumer, priority_consumer, stage_consumer]) as create_consumer,
             patch("app.indexing_main.MessagingUtils.create_consumer_config", new_callable=AsyncMock, return_value={}),
             patch("app.indexing_main.MessagingFactory.create_admin", return_value=admin),
             patch.dict("os.environ", {"DATA_STORE": "arangodb"}),
         ):
             consumers = await start_kafka_consumers(mock_container)
 
-        assert len(consumers) == 2
+        assert len(consumers) == 3
         assert consumers[0][0] == "record"
         assert consumers[0][1] == mock_consumer
         assert consumers[0][2] == mock_producer
-        # The stage consumer shares the retry producer, which the record entry owns and closes.
-        assert consumers[1] == ("pipeline.classify", stage_consumer, None)
-        admin.ensure_topics_exist.assert_awaited_once_with(["pipeline.classify"])
+        # The priority and stage consumers share the retry producer, which the record entry owns and closes.
+        assert consumers[1] == ("record-events-priority", priority_consumer, None)
+        assert consumers[2] == ("pipeline.classify", stage_consumer, None)
+        assert [call.args[0] for call in admin.ensure_topics_exist.await_args_list] == [
+            ["record-events-priority"], ["pipeline.classify"],
+        ]
         runtime = mock_container.pipeline_runtime.return_value
         runtime.publisher.bind.assert_called_once()
         assert runtime.publisher.bind.call_args.args[0] is mock_producer
-        stage_kwargs = create_consumer.call_args_list[1].kwargs
+        priority_kwargs = create_consumer.call_args_list[1].kwargs
+        assert priority_kwargs["priority_lane"].heavy_limit == 1 and priority_kwargs["priority_lane"].light_limit == 3
+        assert priority_kwargs["disposition_sink"] is not runtime.handler  # the record handler, as the record consumer has
+        assert "stage_admission" not in priority_kwargs
+        priority_consumer.start.assert_awaited_once()
+        stage_kwargs = create_consumer.call_args_list[2].kwargs
         assert stage_kwargs["stage_admission"].stage == "classify"
         assert stage_kwargs["stage_admission"].limit == 2
         assert stage_kwargs["disposition_sink"] is runtime.handler
         stage_consumer.start.assert_awaited_once_with(runtime.handler)
-        # Both consumers run their handlers on one shared worker loop.
+        # Every consumer runs its handlers on one shared worker loop.
         worker = create_consumer.call_args_list[0].kwargs["worker"]
         assert isinstance(worker, WorkerLoop)
-        assert create_consumer.call_args_list[1].kwargs["worker"] is worker
+        assert priority_kwargs["worker"] is worker
+        assert create_consumer.call_args_list[2].kwargs["worker"] is worker
 
     async def test_success_neo4j(self) -> None:
         """Startup under Neo4j is now ordinary.
@@ -1138,6 +1148,7 @@ class TestStartKafkaConsumers:
 
         mock_producer = MagicMock()
         mock_producer.initialize = AsyncMock()
+        priority_consumer = MagicMock(start=AsyncMock())
         stage_consumer = MagicMock(start=AsyncMock())
         admin = MagicMock(ensure_topics_exist=AsyncMock())
 
@@ -1149,32 +1160,41 @@ class TestStartKafkaConsumers:
             patch("app.indexing_main.MessagingFactory.create_producer", return_value=mock_producer),
             patch("app.indexing_main.MessagingUtils.create_record_consumer_config", new_callable=AsyncMock, return_value={}),
             patch("app.indexing_main.KafkaUtils.create_record_message_handler", new_callable=AsyncMock, return_value=MagicMock()),
-            patch("app.indexing_main.MessagingFactory.create_consumer", side_effect=[mock_consumer, stage_consumer]) as create_consumer,
+            patch("app.indexing_main.MessagingFactory.create_consumer", side_effect=[mock_consumer, priority_consumer, stage_consumer]) as create_consumer,
             patch("app.indexing_main.MessagingUtils.create_consumer_config", new_callable=AsyncMock, return_value={}),
             patch("app.indexing_main.MessagingFactory.create_admin", return_value=admin),
             patch.dict("os.environ", {"DATA_STORE": "neo4j"}),
         ):
             consumers = await start_kafka_consumers(mock_container)
 
-        assert len(consumers) == 2
+        assert len(consumers) == 3
         assert consumers[0][0] == "record"
         assert consumers[0][1] == mock_consumer
         assert consumers[0][2] == mock_producer
-        # The stage consumer shares the retry producer, which the record entry owns and closes.
-        assert consumers[1] == ("pipeline.classify", stage_consumer, None)
-        admin.ensure_topics_exist.assert_awaited_once_with(["pipeline.classify"])
+        # The priority and stage consumers share the retry producer, which the record entry owns and closes.
+        assert consumers[1] == ("record-events-priority", priority_consumer, None)
+        assert consumers[2] == ("pipeline.classify", stage_consumer, None)
+        assert [call.args[0] for call in admin.ensure_topics_exist.await_args_list] == [
+            ["record-events-priority"], ["pipeline.classify"],
+        ]
         runtime = mock_container.pipeline_runtime.return_value
         runtime.publisher.bind.assert_called_once()
         assert runtime.publisher.bind.call_args.args[0] is mock_producer
-        stage_kwargs = create_consumer.call_args_list[1].kwargs
+        priority_kwargs = create_consumer.call_args_list[1].kwargs
+        assert priority_kwargs["priority_lane"].heavy_limit == 1 and priority_kwargs["priority_lane"].light_limit == 3
+        assert priority_kwargs["disposition_sink"] is not runtime.handler  # the record handler, as the record consumer has
+        assert "stage_admission" not in priority_kwargs
+        priority_consumer.start.assert_awaited_once()
+        stage_kwargs = create_consumer.call_args_list[2].kwargs
         assert stage_kwargs["stage_admission"].stage == "classify"
         assert stage_kwargs["stage_admission"].limit == 2
         assert stage_kwargs["disposition_sink"] is runtime.handler
         stage_consumer.start.assert_awaited_once_with(runtime.handler)
-        # Both consumers run their handlers on one shared worker loop.
+        # Every consumer runs its handlers on one shared worker loop.
         worker = create_consumer.call_args_list[0].kwargs["worker"]
         assert isinstance(worker, WorkerLoop)
-        assert create_consumer.call_args_list[1].kwargs["worker"] is worker
+        assert priority_kwargs["worker"] is worker
+        assert create_consumer.call_args_list[2].kwargs["worker"] is worker
 
     async def test_connector_off_filter_reaches_the_record_consumer(self) -> None:
         """The container's filter is what lets the consumer settle a turned-off
@@ -1225,8 +1245,11 @@ class TestStartKafkaConsumers:
         ):
             await start_kafka_consumers(mock_container)
 
-        admissions = [c.kwargs["stage_admission"] for c in create_consumer.call_args_list[1:]]
+        admissions = [c.kwargs["stage_admission"] for c in create_consumer.call_args_list[1:] if "stage_admission" in c.kwargs]
         assert admissions and all(admission.workers == 3 for admission in admissions)
+        # The priority lane's lease pools are sized for them too.
+        (lane,) = [c.kwargs["priority_lane"] for c in create_consumer.call_args_list[1:] if "priority_lane" in c.kwargs]
+        assert lane.workers == 3
 
     async def test_distributed_concurrency_failure_aborts_startup(self) -> None:
         """Redis is a startup requirement: an unreachable one fails the boot.
@@ -1323,10 +1346,12 @@ class TestStageTopicsUnavailable:
 
         mock_container = _make_container()
         record_consumer = MagicMock(start=AsyncMock())
+        priority_consumer = MagicMock(start=AsyncMock())
         stage_consumer = MagicMock(start=AsyncMock())
         producer = MagicMock(initialize=AsyncMock())
         denied = RuntimeError("TopicAuthorizationFailedError")
-        admin = MagicMock(ensure_topics_exist=AsyncMock(side_effect=[denied, denied, None]))
+        # The priority topic first; then the stage topics are refused twice.
+        admin = MagicMock(ensure_topics_exist=AsyncMock(side_effect=[None, denied, denied, None]))
         runtime = mock_container.pipeline_runtime.return_value
 
         with (
@@ -1337,7 +1362,7 @@ class TestStageTopicsUnavailable:
             patch("app.indexing_main.MessagingFactory.create_producer", return_value=producer),
             patch("app.indexing_main.MessagingUtils.create_record_consumer_config", new_callable=AsyncMock, return_value={}),
             patch("app.indexing_main.KafkaUtils.create_record_message_handler", new_callable=AsyncMock, return_value=MagicMock()),
-            patch("app.indexing_main.MessagingFactory.create_consumer", side_effect=[record_consumer, stage_consumer]),
+            patch("app.indexing_main.MessagingFactory.create_consumer", side_effect=[record_consumer, priority_consumer, stage_consumer]),
             patch("app.indexing_main.MessagingUtils.create_consumer_config", new_callable=AsyncMock, return_value={}),
             patch("app.indexing_main.MessagingFactory.create_admin", return_value=admin),
             patch("app.indexing_main._TOPIC_RETRY_FIRST_S", 0.0),
@@ -1345,14 +1370,14 @@ class TestStageTopicsUnavailable:
         ):
             consumers = await start_kafka_consumers(mock_container)
 
-            assert [entry[0] for entry in consumers] == ["record"]
+            assert [entry[0] for entry in consumers] == ["record", "record-events-priority"]
             record_consumer.start.assert_awaited_once()
             # Unbound, a claim stays QUEUED for the sweeper instead of waiting on a missing topic.
             runtime.publisher.bind.assert_not_called()
             await mock_container.stage_startup_task
 
-        assert admin.ensure_topics_exist.await_count == 3
-        assert consumers[1] == ("pipeline.classify", stage_consumer, None)
+        assert admin.ensure_topics_exist.await_count == 4
+        assert consumers[2] == ("pipeline.classify", stage_consumer, None)
         runtime.publisher.bind.assert_called_once()
         assert runtime.publisher.bind.call_args.args[0] is producer
         stage_consumer.start.assert_awaited_once_with(runtime.handler)
@@ -1365,10 +1390,11 @@ class TestStageTopicsUnavailable:
         runtime.registry.names.return_value = ("classify", "entities")
         runtime.stage_limits = {"classify": 2, "entities": 2}
         record_consumer = MagicMock(start=AsyncMock())
+        priority_consumer = MagicMock(start=AsyncMock())
         classify_first = MagicMock(start=AsyncMock(), stop=AsyncMock())
         entities_first = MagicMock(start=AsyncMock(side_effect=RuntimeError("broker blip")), stop=AsyncMock())
         classify, entities = MagicMock(start=AsyncMock()), MagicMock(start=AsyncMock())
-        admin = MagicMock(ensure_topics_exist=AsyncMock(side_effect=[RuntimeError("denied"), None, None]))
+        admin = MagicMock(ensure_topics_exist=AsyncMock(side_effect=[None, RuntimeError("denied"), None, None]))
 
         with (
             patch("app.indexing_main.get_message_broker_type", return_value=MessageBrokerType.KAFKA),
@@ -1380,7 +1406,7 @@ class TestStageTopicsUnavailable:
             patch("app.indexing_main.KafkaUtils.create_record_message_handler", new_callable=AsyncMock, return_value=MagicMock()),
             patch(
                 "app.indexing_main.MessagingFactory.create_consumer",
-                side_effect=[record_consumer, classify_first, entities_first, classify, entities],
+                side_effect=[record_consumer, priority_consumer, classify_first, entities_first, classify, entities],
             ),
             patch("app.indexing_main.MessagingUtils.create_consumer_config", new_callable=AsyncMock, return_value={}),
             patch("app.indexing_main.MessagingFactory.create_admin", return_value=admin),
@@ -1394,7 +1420,8 @@ class TestStageTopicsUnavailable:
         classify_first.stop.assert_awaited_once()
         entities_first.stop.assert_awaited_once()
         assert [(entry[0], entry[1]) for entry in consumers] == [
-            ("record", record_consumer), ("pipeline.classify", classify), ("pipeline.entities", entities),
+            ("record", record_consumer), ("record-events-priority", priority_consumer),
+            ("pipeline.classify", classify), ("pipeline.entities", entities),
         ]
         classify.start.assert_awaited_once()
         entities.start.assert_awaited_once()
@@ -1407,6 +1434,59 @@ class TestStageTopicsUnavailable:
         container.worker_loop = None
         waiting = asyncio.create_task(asyncio.sleep(3600))
         container.stage_startup_task = waiting
+
+        await stop_kafka_consumers(container)
+
+        assert waiting.cancelled()
+
+
+class TestPriorityTopicUnavailable:
+    """A broker that cannot create the priority topic must not stop records being indexed."""
+
+    async def test_the_record_consumer_runs_and_the_priority_consumer_starts_once_its_topic_exists(self) -> None:
+        from app.indexing_main import start_kafka_consumers
+
+        mock_container = _make_container()
+        runtime = mock_container.pipeline_runtime.return_value
+        runtime.registry.names.return_value = ()
+        runtime.registry.topic_for.side_effect = lambda name: f"pipeline.{name}"
+        record_consumer = MagicMock(start=AsyncMock())
+        priority_consumer = MagicMock(start=AsyncMock())
+        denied = RuntimeError("TopicAuthorizationFailedError")
+        # Refused at startup and once more in the background, then created; the stage topics have none.
+        admin = MagicMock(ensure_topics_exist=AsyncMock(side_effect=[denied, denied, None, None]))
+
+        with (
+            patch("app.indexing_main.get_message_broker_type", return_value=MessageBrokerType.KAFKA),
+            patch("app.indexing_main.MessagingUtils._get_redis_config", new_callable=AsyncMock, return_value=MagicMock()),
+            patch("app.indexing_main.MessagingFactory.create_retry_manager", return_value=MagicMock(initialize=AsyncMock())),
+            patch("app.indexing_main.MessagingUtils.create_producer_config_from_service", new_callable=AsyncMock, return_value={}),
+            patch("app.indexing_main.MessagingFactory.create_producer", return_value=MagicMock(initialize=AsyncMock())),
+            patch("app.indexing_main.MessagingUtils.create_record_consumer_config", new_callable=AsyncMock, return_value={}),
+            patch("app.indexing_main.KafkaUtils.create_record_message_handler", new_callable=AsyncMock, return_value=MagicMock()),
+            patch("app.indexing_main.MessagingFactory.create_consumer", side_effect=[record_consumer, priority_consumer]),
+            patch("app.indexing_main.MessagingUtils.create_consumer_config", new_callable=AsyncMock, return_value={}),
+            patch("app.indexing_main.MessagingFactory.create_admin", return_value=admin),
+            patch("app.indexing_main._TOPIC_RETRY_FIRST_S", 0.0),
+            patch.dict("os.environ", {"DATA_STORE": "arangodb"}),
+        ):
+            consumers = await start_kafka_consumers(mock_container)
+
+            assert [entry[0] for entry in consumers] == ["record"]
+            record_consumer.start.assert_awaited_once()
+            await mock_container.priority_startup_task
+
+        assert consumers[1] == ("record-events-priority", priority_consumer, None)
+        priority_consumer.start.assert_awaited_once()
+
+    async def test_shutdown_cancels_a_priority_start_still_waiting_for_its_topic(self) -> None:
+        from app.indexing_main import stop_kafka_consumers
+
+        container = _make_container()
+        container.kafka_consumers = []
+        container.worker_loop = None
+        waiting = asyncio.create_task(asyncio.sleep(3600))
+        container.priority_startup_task = waiting
 
         await stop_kafka_consumers(container)
 

@@ -37,6 +37,7 @@ describe('KafkaAdminService', () => {
       expect(REQUIRED_KAFKA_TOPICS).to.be.an('array');
       const topicNames = REQUIRED_KAFKA_TOPICS.map((t) => t.topic);
       expect(topicNames).to.include('record-events');
+      expect(topicNames).to.include('record-events-priority');
       expect(topicNames).to.include('code-graph-events');
       expect(topicNames).to.include('entity-events');
       expect(topicNames).to.include('ai-config-events');
@@ -127,6 +128,8 @@ describe('KafkaAdminService', () => {
       const created = mockAdmin.createTopics.firstCall.args[0].topics;
       const recordEvents = created.find((t: { topic: string }) => t.topic === 'record-events');
       expect(recordEvents.numPartitions).to.equal(32);
+      const priority = created.find((t: { topic: string }) => t.topic === 'record-events-priority');
+      expect(priority.numPartitions).to.equal(32);
       expect(mockAdmin.createPartitions.called).to.be.false;
     });
   });

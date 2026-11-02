@@ -45,9 +45,25 @@ def is_not_indexed(status: str | None) -> bool:
     return bool(status) and status != ProgressStatus.COMPLETED.value
 
 
-def not_indexed_note(status: str | None) -> str:
-    """One paragraph telling the model the record exists but cannot be read."""
+_PREPARING = {
+    "waiting": "it is being prepared for reading and was not ready in time, so asking again shortly should work",
+    "deferred": "this call could only prepare a few records at once, so asking for it again should work",
+}
+
+
+def not_indexed_note(status: str | None, preparing: str | None = None) -> str:
+    """One paragraph telling the model the record exists but cannot be read.
+
+    ``preparing`` is set when the record is being parsed for this read: ``waiting``
+    (not ready in time) or ``deferred`` (not started: the call asked for too many)."""
     shown = status or "unknown"
+    if preparing in _PREPARING:
+        return (
+            f"Content being prepared: this record exists, and its content is not indexed yet (status: {shown}); "
+            f"{_PREPARING[preparing]}.\n"
+            "Its text cannot be read yet, so use its name, link and dates and say its content "
+            "was not ready."
+        )
     why = "it is waiting to be indexed, so asking again shortly may work" if shown in _PENDING else _WHY.get(shown)
     lines = [
         f"Not indexed: this record exists, but its content is not indexed yet (status: {shown})"

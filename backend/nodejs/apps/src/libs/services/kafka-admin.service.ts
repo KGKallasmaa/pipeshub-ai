@@ -59,13 +59,15 @@ function partitionsSetExplicitly(): boolean {
  * fairness problem to solve.
  */
 export function buildRequiredTopics(): TopicDefinition[] {
+  // The priority lane carries the same events as record-events, laned the same way.
+  const laned = (topic: BrokerTopic) =>
+    topic === BrokerTopic.RECORD_EVENTS ||
+    topic === BrokerTopic.RECORD_EVENTS_PRIORITY;
   return Object.values(BrokerTopic).map((topic) => ({
     topic,
-    numPartitions:
-      topic === BrokerTopic.RECORD_EVENTS ? configuredPartitions() : 1,
+    numPartitions: laned(topic) ? configuredPartitions() : 1,
     replicationFactor: 1,
-    growExisting:
-      topic === BrokerTopic.RECORD_EVENTS && partitionsSetExplicitly(),
+    growExisting: laned(topic) && partitionsSetExplicitly(),
   }));
 }
 
