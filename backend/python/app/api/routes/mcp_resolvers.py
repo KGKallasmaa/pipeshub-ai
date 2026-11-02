@@ -31,7 +31,7 @@ async def unusable_agent_mcp_server_ids(
     attached: list[dict[str, Any]],
     config_service: ConfigurationService,
     org_id: str,
-    user_id: Optional[str],
+    user_id: str | None,
 ) -> frozenset[str]:
     """Ids of an agent's attached MCP servers that `user_id` may not use: none here."""
     del attached, config_service, org_id, user_id
