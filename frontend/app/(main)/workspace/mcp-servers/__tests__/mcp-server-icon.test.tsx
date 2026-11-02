@@ -25,6 +25,11 @@ describe('McpServerIcon', () => {
     expect(logo(<McpServerIcon typeId="microsoft_learn" name="Microsoft Learn" />)).toBe('microsoft-learn icon');
   });
 
+  it('shows the DocuSign and Okta catalog logos', () => {
+    expect(logo(<McpServerIcon typeId="docusign" name="DocuSign" />)).toBe('docusign icon');
+    expect(logo(<McpServerIcon typeId="okta" name="Okta" />)).toBe('okta icon');
+  });
+
   it('goes by the catalog type when the server was renamed', () => {
     expect(logo(<McpServerIcon typeId="linear" name="Team tracker" />)).toBe('linear icon');
   });
@@ -48,4 +53,9 @@ describe('McpServerIcon', () => {
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('[data-icon="hub"]')).toBeTruthy();
   });
+
+  it("shows Vercel's logo", () => {
+    expect(logo(<McpServerIcon typeId="vercel" name="Vercel" />)).toBe('vercel icon');
+  });
+
 });
