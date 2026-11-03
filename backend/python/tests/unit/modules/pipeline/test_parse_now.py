@@ -188,14 +188,15 @@ async def test_five_readers_of_one_record_cause_one_event(redis) -> None:
     assert sum(send.await_count for _, send in askers) == 1
 
 
-async def test_another_revision_or_org_is_a_different_claim(redis) -> None:
+async def test_another_org_is_a_different_claim_but_a_new_revision_is_not(redis) -> None:
     asker, send = _asker(redis=redis)
 
     await asker.request("rec-1", _doc("QUEUED"), "org-1", "u")
+    # The revision is assigned once indexing starts; a late reader must not ask a second time.
     await asker.request("rec-1", _doc("QUEUED", contentRev="rev-2"), "org-1", "u")
     await asker.request("rec-1", _doc("QUEUED"), "org-2", "u")
 
-    assert send.await_count == 3
+    assert send.await_count == 2
 
 
 async def test_a_claim_that_ran_out_lets_the_next_reader_ask_again(redis) -> None:

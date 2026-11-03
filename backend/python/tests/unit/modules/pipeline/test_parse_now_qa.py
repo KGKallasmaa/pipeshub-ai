@@ -127,7 +127,7 @@ async def test_a_claim_is_released_when_the_publish_fails() -> None:  # L12
     asker = _asker(AsyncMock(side_effect=RuntimeError("broker")), wait=0.2, redis=redis)
 
     assert await asker.request("r0", {"contentRev": "rev-1"}, "org-1", "u1") is False
-    client.delete.assert_awaited_once_with("ns:parse-now:org-1:r0:rev-1")
+    client.delete.assert_awaited_once_with("ns:parse-now:org-1:r0")
 
 
 async def test_a_claim_is_released_when_the_publish_is_cancelled() -> None:  # R21

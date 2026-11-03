@@ -180,7 +180,7 @@ class ParseNow:
         sent = False
         claim: tuple[Any, str] | bool | None = None
         try:
-            claim = await self._claim(f"parse-now:{org_id}:{record_id}:{doc.get('contentRev')}")
+            claim = await self._claim(f"parse-now:{org_id}:{record_id}")
             if claim is False:
                 return True
             # Bounded: a dead broker must not stall the read.
