@@ -11,7 +11,12 @@ import pytest
 
 from app.config.constants.arangodb import EventTypes
 from app.modules.indexing import parse_now_marker as marker
-from app.modules.pipeline.parse_now import READY, ParseNow, optional_redis, parse_outcome
+from app.modules.pipeline.parse_now import (
+    READY,
+    ParseNow,
+    optional_redis,
+    parse_outcome,
+)
 from app.services.messaging.config import StreamMessage
 from tests.unit.services.messaging.test_record_handler_parse_now import (
     Harness,
@@ -200,8 +205,47 @@ async def test_a_stale_failed_marker_ends_the_wait_once_a_new_run_failed(stored_
     assert result["ok"] is False
 
 
-async def test_a_redis_failure_runs_parse_now_without_dedup() -> None:
-    container = MagicMock()
-    container.redis_provider = AsyncMock(side_effect=ConnectionError("down"))
+async def test_a_redis_failure_runs_parse_now_without_dedup(caplog) -> None:
+    config_service = MagicMock()
+    config_service.get_redis_config = AsyncMock(side_effect=ConnectionError("down"))
 
-    assert await optional_redis(container, logging.getLogger("qa")) is None
+    with caplog.at_level(logging.WARNING):
+        assert await optional_redis(config_service, logging.getLogger("qa")) is None
+
+    assert "Redis unavailable" in caplog.text and "down" in caplog.text
+
+
+async def test_the_redis_handle_comes_from_the_services_own_config_service() -> None:
+    # The container's redis_provider is bound to the base config_service (no key_value_store), so it raised TypeError in
+    # the query service; this path must need nothing but get_redis_config().
+    from app.config.configuration_service import ConfigurationService
+    from app.containers.query import QueryAppContainer
+    from app.services.redis.config import RedisConnectionConfig
+    from app.services.redis.connection_provider_factory import (
+        reset_redis_provider_registry,
+    )
+
+    assert QueryAppContainer.config_service.cls is ConfigurationService
+    assert "key_value_store" in QueryAppContainer.config_service.kwargs  # the shape that broke the container's provider
+
+    reset_redis_provider_registry()
+    config_service = MagicMock()
+    config_service.get_redis_config = AsyncMock(
+        return_value=MagicMock(host="localhost", port=6379, password=None, db=0, tls=False)
+    )
+    try:
+        provider = await optional_redis(config_service, logging.getLogger("qa"))
+    finally:
+        reset_redis_provider_registry()
+
+    assert provider is not None and hasattr(provider, "get_client")
+    assert RedisConnectionConfig.from_host_port  # signature used above
+
+
+async def test_a_permanent_marker_ends_the_wait_and_is_not_asked_again() -> None:
+    doc = {
+        "indexingStatus": "AUTO_INDEX_OFF", "isDeleted": False, "contentRev": "r1",
+        "parseNowStatus": "PASSWORD_PROTECTED", "parseNowRev": "r1",
+    }
+    assert parse_outcome(doc) == "PASSWORD_PROTECTED"
+    assert await ParseNow(MagicMock(), logging.getLogger("qa")).assess(MagicMock(), doc) == (False, "PASSWORD_PROTECTED")

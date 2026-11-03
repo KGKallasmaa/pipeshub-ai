@@ -317,6 +317,15 @@ class TestFailuresEndInTheMarker:
 
         assert not any("parseNowStatus" in write for write in harness.writes())
 
+    @pytest.mark.parametrize("marker", ["PASSWORD_PROTECTED", "FILE_TYPE_NOT_SUPPORTED", "EMPTY", "NEEDS_MULTIMODAL"])
+    async def test_a_permanent_marker_is_not_replaced_by_the_abandon_failure(self, marker) -> None:
+        harness = Harness(_record(parseNowStatus=marker, parseNowRev=REV))
+        message = StreamMessage(eventType=EventTypes.REINDEX_RECORD.value, payload=_payload())
+
+        await harness.handler.on_message_abandoned(message, reason="terminal error: PasswordProtectedError", attempts=1)
+
+        assert not any("parseNowStatus" in write for write in harness.writes())
+
     async def test_a_stored_marker_is_not_replaced_by_a_late_failure(self) -> None:
         harness = Harness(_record(parseNowStatus="STORED", parseNowRev=REV))
         message = StreamMessage(eventType=EventTypes.REINDEX_RECORD.value, payload=_payload())

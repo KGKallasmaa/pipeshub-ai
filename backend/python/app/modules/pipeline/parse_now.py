@@ -95,10 +95,24 @@ def parse_outcome(doc: dict[str, Any]) -> str | None:
     return None if status in ELIGIBLE_STATUSES else status
 
 
-async def optional_redis(container: Any, logger: Any) -> Any:  # noqa: ANN401
-    """The container's Redis, or None when it is down: ParseNow then runs without dedup."""
+async def optional_redis(config_service: Any, logger: Any) -> Any:  # noqa: ANN401
+    """The shared Redis provider, or None when it is down: ParseNow then runs without dedup.
+
+    Built from the service's own config_service: the containers' ``redis_provider`` is bound to the base
+    container's config_service, which the query and connector containers replace.
+    """
     try:
-        return await container.redis_provider()
+        from app.services.redis.config import RedisConnectionConfig
+        from app.services.redis.connection_provider_factory import (
+            get_prepared_redis_provider,
+        )
+
+        redis = await config_service.get_redis_config()
+        return await get_prepared_redis_provider(
+            RedisConnectionConfig.from_host_port(
+                host=redis.host, port=redis.port, password=redis.password, db=redis.db, tls=redis.tls,
+            )
+        )
     except Exception:
         logger.warning("Redis unavailable; parse now runs without dedup", exc_info=True)
         return None

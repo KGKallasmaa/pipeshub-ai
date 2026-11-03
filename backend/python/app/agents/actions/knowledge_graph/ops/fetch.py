@@ -250,7 +250,7 @@ async def execute_fetch_record(
     from app.agents.agent_loop.answer_rules import READ_RECORDS_IN_FULL_STATE_KEY
     from app.agents.agent_loop.tool_adapter import _to_tool_output
     from app.modules.agents.qna.chat_state import remember_record_ids
-    from app.modules.pipeline.parse_now import ParseNow
+    from app.modules.pipeline.parse_now import ParseNow, optional_redis
     from app.modules.retrieval.context.targeted import (
         focused_read_chars,
         targeted_retrieval_enabled,
@@ -335,7 +335,10 @@ async def execute_fetch_record(
         user_id=context.user_id,
         connection_sources=connection_sources_of((context.tool_state or {}).get("filters")),
         # A continuation reads what the first page left stored; it never starts a parse.
-        parse_now=ParseNow(config_service, logger) if config_service is not None and start_block == 0 else None,
+        parse_now=(
+            ParseNow(config_service, logger, redis_provider=await optional_redis(config_service, logger))
+            if config_service is not None and start_block == 0 else None
+        ),
     )
     try:
         # A record outside what the turn is limited to is answered like one

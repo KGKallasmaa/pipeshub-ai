@@ -75,6 +75,9 @@ from app.modules.indexing.rate_limit_deferral import (
 from app.modules.pipeline.parse_now import (
     ELIGIBLE_STATUSES as PARSE_NOW_ELIGIBLE_STATUSES,
 )
+from app.modules.pipeline.parse_now import (
+    terminal_marker_status,
+)
 from app.modules.transformers.transformer import TransformContext
 from app.services.cache.invalidation_hooks import notify_record_indexed
 from app.services.graph_db.common.record_visibility import (
@@ -493,9 +496,13 @@ class RecordEventHandler(BaseEventService):
         self, record_id: str, record: dict, status: ParseNowStatus, *, reason: str | None = None
     ) -> None:
         """Write the parse-now marker for a status that is not STORED. Never raises, and never
-        replaces a STORED marker of the revision the record is on."""
+        replaces a STORED marker of the revision the record is on, nor a permanent outcome
+        (password, file type, empty, needs a model) with FAILED."""
         rev = record.get("contentRev")
         if record.get(PARSE_NOW_STATUS) == ParseNowStatus.STORED.value and record.get(PARSE_NOW_REV) == rev:
+            return
+        # The abandon hook runs after a terminal error already wrote its own marker.
+        if status is ParseNowStatus.FAILED and terminal_marker_status(record) is not None:
             return
         try:
             await self.event_processor.graph_provider.update_node(

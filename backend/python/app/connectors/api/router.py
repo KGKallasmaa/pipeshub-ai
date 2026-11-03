@@ -1959,7 +1959,7 @@ async def get_record_content(
             connection_sources=connection_limit(request.state.user),
             accessible=accessible,
             parse_now=ParseNow(
-                container.config_service(), logger, container.messaging_producer, await optional_redis(container, logger),
+                container.config_service(), logger, container.messaging_producer, await optional_redis(container.config_service(), logger),
             ),
         )
     except Exception as e:

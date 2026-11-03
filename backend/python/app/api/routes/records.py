@@ -248,7 +248,7 @@ async def read_record_content(
             accessible=accessible,
             # A later page reads what the first left stored; it never starts a parse.
             parse_now=None if start_block else ParseNow(
-                container.config_service(), logger, redis_provider=await optional_redis(container, logger),
+                container.config_service(), logger, redis_provider=await optional_redis(container.config_service(), logger),
             ),
         )
     except Exception as exc:
