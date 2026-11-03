@@ -22,7 +22,7 @@ from app.config.constants.arangodb import CollectionNames
 from app.config.constants.http_status_code import HttpStatusCode
 from app.config.constants.service import OAuthScopes
 from app.modules.demo_data.access import is_hidden_demo_record
-from app.modules.pipeline.parse_now import ParseNow
+from app.modules.pipeline.parse_now import ParseNow, optional_redis
 from app.modules.retrieval.selection_scope import within_connection
 from app.services.model_identity.boundary import principal_from_request_user
 from app.services.model_identity.runtime import call_scope
@@ -248,7 +248,7 @@ async def read_record_content(
             accessible=accessible,
             # A later page reads what the first left stored; it never starts a parse.
             parse_now=None if start_block else ParseNow(
-                container.config_service(), logger, redis_provider=await container.redis_provider(),
+                container.config_service(), logger, redis_provider=await optional_redis(container, logger),
             ),
         )
     except Exception as exc:

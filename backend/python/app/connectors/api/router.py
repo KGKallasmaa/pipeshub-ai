@@ -185,7 +185,7 @@ from app.utils.chat_helpers import (
 from app.utils.render_budget import FETCH_MAX_CHARS
 from app.utils.egress_ips import get_egress_ips
 from app.utils.fetch_full_record import _fetch_multiple_records_impl
-from app.modules.pipeline.parse_now import ParseNow
+from app.modules.pipeline.parse_now import ParseNow, optional_redis
 from app.utils.not_indexed import not_indexed_note
 from app.utils.user_messages import (
     EPUB_PREVIEW_UNAVAILABLE,
@@ -1959,7 +1959,7 @@ async def get_record_content(
             connection_sources=connection_limit(request.state.user),
             accessible=accessible,
             parse_now=ParseNow(
-                container.config_service(), logger, container.messaging_producer, await container.redis_provider(),
+                container.config_service(), logger, container.messaging_producer, await optional_redis(container, logger),
             ),
         )
     except Exception as e:

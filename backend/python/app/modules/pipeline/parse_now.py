@@ -95,6 +95,15 @@ def parse_outcome(doc: dict[str, Any]) -> str | None:
     return None if status in ELIGIBLE_STATUSES else status
 
 
+async def optional_redis(container: Any, logger: Any) -> Any:  # noqa: ANN401
+    """The container's Redis, or None when it is down: ParseNow then runs without dedup."""
+    try:
+        return await container.redis_provider()
+    except Exception:
+        logger.warning("Redis unavailable; parse now runs without dedup", exc_info=True)
+        return None
+
+
 def parse_now_event(record_id: str, doc: dict[str, Any], org_id: str, user_id: str) -> dict[str, Any]:
     """``org_id`` is the caller's, never the graph row's."""
     return {

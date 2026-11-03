@@ -438,6 +438,8 @@ class _RecordResolver:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + seconds
         steps = itertools.chain(_POLL_STEPS, itertools.repeat(_POLL_THEN_EVERY))
+        # A FAILED marker already there was left by an earlier run, not the one just asked for.
+        stale = {rid for rid, d in self.waiting.items() if d.get("parseNowStatus") == "FAILED"}
         while len(self._parse_outcomes) < len(self.waiting) and (left := deadline - loop.time()) > 0:
             await asyncio.sleep(min(next(steps), left))
             open_ids = [rid for rid in self.waiting if rid not in self._parse_outcomes]
@@ -454,6 +456,11 @@ class _RecordResolver:
                     self._parse_outcomes[rid] = _GONE
                     continue
                 self.waiting[rid] = doc
+                if rid in stale:
+                    if doc.get("parseNowStatus") != "FAILED":
+                        stale.discard(rid)
+                    elif parse_outcome(doc) == "FAILED":
+                        continue
                 if (outcome := parse_outcome(doc)) is not None:
                     self._parse_outcomes[rid] = outcome
 
